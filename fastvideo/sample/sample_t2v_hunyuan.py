@@ -77,8 +77,15 @@ def main(args):
         
         from fastvideo.utils.timing import global_timer
         results = global_timer.get_time()
-        print(results)
 
+        if dist.get_rank() == 0:
+            profile_file = args.profile_path + f"_{global_timer.length}.txt"
+            os.makedirs(os.path.dirname(profile_file), exist_ok=True)
+            with open(profile_file, "a+") as f:
+                f.write(f"{results}\n")
+
+        global_timer.reset()
+        
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -237,6 +244,12 @@ if __name__ == "__main__":
     parser.add_argument("--text-states-dim-2", type=int, default=768)
     parser.add_argument("--tokenizer-2", type=str, default="clipL")
     parser.add_argument("--text-len-2", type=int, default=77)
+    
+    parser.add_argument(
+        "--profile-path",
+        type=str,
+        default="tmp.txt",
+    )
 
     args = parser.parse_args()
     # process for vae sequence parallel

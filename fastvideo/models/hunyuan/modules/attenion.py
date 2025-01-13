@@ -61,6 +61,8 @@ def parallel_attention(q, k, v, img_q_len, img_kv_len, text_mask):
     sequence_length = query.size(1)
     encoder_sequence_length = encoder_query.size(1)
 
+    global_timer.set_length(sequence_length + encoder_sequence_length)
+
     # Hint: please check encoder_query.shape
     query = torch.cat([query, encoder_query], dim=1)
     key = torch.cat([key, encoder_key], dim=1)

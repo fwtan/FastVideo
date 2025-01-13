@@ -10,6 +10,7 @@ from typing import Optional, Dict, List, Callable, Any, DefaultDict
 class Timing:
     _instance = None
     _lock = threading.Lock()
+    length = None
 
     def __new__(cls):
         """Singleton pattern implementation with thread safety"""
@@ -31,7 +32,7 @@ class Timing:
         # 缓存结果
         self.cached_results = {}
         self.results_need_update = True
-
+        
     def _get_gpu_rank(self) -> int:
         """Get current GPU rank with caching
         Returns:
@@ -46,7 +47,15 @@ class Timing:
             else:
                 self._gpu_rank = 0
         return self._gpu_rank
-        
+    
+    def set_length(self, length: int):
+        """Set the length attribute
+        Args:
+            length: the length to set
+        """
+        with self._lock:
+            self.length = length
+
     def start(self, block_name: str):
         """Start timing a code block
         Args:
