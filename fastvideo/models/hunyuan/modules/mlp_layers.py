@@ -48,7 +48,10 @@ class MLP(nn.Module):
                                 bias=bias[1],
                                 **factory_kwargs)
         self.drop2 = nn.Dropout(drop_probs[1])
+        
+    from fastvideo.utils.timing import global_timer
 
+    @global_timer.timer("MLP")
     def forward(self, x):
         x = self.fc1(x)
         x = self.act(x)

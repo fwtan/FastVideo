@@ -26,25 +26,45 @@ class Timing:
         self.stats: DefaultDict[str, Dict[str, float]] = defaultdict(
             lambda: {'total_time': 0.0, 'count': 0, 'avg_time': 0.0}
         )
+        # 缓存GPU rank
+        self._gpu_rank = None
+        # 缓存结果
+        self.cached_results = {}
+        self.results_need_update = True
+
+    def _get_gpu_rank(self) -> int:
+        """Get current GPU rank with caching
+        Returns:
+            int: GPU rank (0 if no GPU available)
+        """
+        if self._gpu_rank is None:
+            if torch.cuda.is_available():
+                if dist.is_initialized():
+                    self._gpu_rank = dist.get_rank()
+                else:
+                    self._gpu_rank = torch.cuda.current_device()
+            else:
+                self._gpu_rank = 0
+        return self._gpu_rank
         
-    def start(self, block_name: str, gpu_rank: int):
+    def start(self, block_name: str):
         """Start timing a code block
         Args:
             block_name: identifier for the code block
-            gpu_rank: GPU device rank
         """
         with self._lock:
+            gpu_rank = self._get_gpu_rank()
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             self.start_times[(block_name, gpu_rank)] = time.perf_counter()
         
-    def end(self, block_name: str, gpu_rank: int):
+    def end(self, block_name: str):
         """End timing a code block
         Args:
             block_name: identifier for the code block
-            gpu_rank: GPU device rank
         """
         with self._lock:
+            gpu_rank = self._get_gpu_rank()
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             end_time = time.perf_counter()
@@ -54,6 +74,7 @@ class Timing:
                 
             start_time = self.start_times.pop((block_name, gpu_rank))
             self.timing_dict[block_name].append((start_time, end_time, gpu_rank))
+            self.results_need_update = True
         
     def _sync_across_gpus(self, local_time: float) -> float:
         """Synchronize timing across multiple GPUs and compute average"""
@@ -68,6 +89,43 @@ class Timing:
         avg_time = sum(t.item() for t in times_list) / world_size
         return avg_time
         
+    def _calculate_stats(self, with_statistics: bool = True) -> Dict:
+        """Calculate timing statistics"""
+        result = {}
+        
+        for block_name, time_list in self.timing_dict.items():
+            # Calculate total time for each GPU per block
+            gpu_times = defaultdict(float)
+            for start, end, gpu_rank in time_list:
+                gpu_times[gpu_rank] += end - start
+                
+            # Average times across GPUs
+            avg_times = []
+            for gpu_rank, total_time in gpu_times.items():
+                avg_times.append(self._sync_across_gpus(total_time))
+                
+            # Compute final average across all GPUs
+            total_time = sum(avg_times) / len(avg_times) if avg_times else 0
+            
+            # Update statistics
+            self.stats[block_name]['total_time'] = total_time
+            self.stats[block_name]['count'] = len(time_list) // len(gpu_times)
+            self.stats[block_name]['avg_time'] = (
+                total_time / self.stats[block_name]['count'] 
+                if self.stats[block_name]['count'] > 0 else 0
+            )
+            
+            if with_statistics:
+                result[block_name] = {
+                    'total_time': total_time,
+                    'call_count': self.stats[block_name]['count'],
+                    'avg_time_per_call': self.stats[block_name]['avg_time']
+                }
+            else:
+                result[block_name] = total_time
+                
+        return result
+
     def get_time(self, with_statistics: bool = True) -> str:
         """Get timing results for all blocks
         Args:
@@ -76,40 +134,10 @@ class Timing:
             JSON string containing timing results and optional statistics
         """
         with self._lock:
-            result = {}
-            
-            for block_name, time_list in self.timing_dict.items():
-                # Calculate total time for each GPU per block
-                gpu_times = defaultdict(float)
-                for start, end, gpu_rank in time_list:
-                    gpu_times[gpu_rank] += end - start
-                    
-                # Average times across GPUs
-                avg_times = []
-                for gpu_rank, total_time in gpu_times.items():
-                    avg_times.append(self._sync_across_gpus(total_time))
-                    
-                # Compute final average across all GPUs
-                total_time = sum(avg_times) / len(avg_times) if avg_times else 0
-                
-                # Update statistics
-                self.stats[block_name]['total_time'] = total_time
-                self.stats[block_name]['count'] = len(time_list) // len(gpu_times)
-                self.stats[block_name]['avg_time'] = (
-                    total_time / self.stats[block_name]['count'] 
-                    if self.stats[block_name]['count'] > 0 else 0
-                )
-                
-                if with_statistics:
-                    result[block_name] = {
-                        'total_time': total_time,
-                        'call_count': self.stats[block_name]['count'],
-                        'avg_time_per_call': self.stats[block_name]['avg_time']
-                    }
-                else:
-                    result[block_name] = total_time
-                
-            return json.dumps(result, indent=2)
+            if self.results_need_update:
+                self.cached_results = self._calculate_stats(with_statistics)
+                self.results_need_update = False
+            return json.dumps(self.cached_results, indent=2)
         
     def clean(self, block_name: Optional[str] = None):
         """Clean timing records for specified block or all blocks
@@ -133,6 +161,9 @@ class Timing:
                 self.timing_dict.clear()
                 self.start_times.clear()
                 self.stats.clear()
+                # 重置缓存
+                self.cached_results.clear()
+            self.results_need_update = True
             
     def reset(self):
         """Reset all timing records (alias for clean())"""
@@ -143,23 +174,13 @@ class Timing:
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
             def wrapper(*args, **kwargs) -> Any:
-                # Get current GPU rank
-                gpu_rank = 0
-                if torch.cuda.is_available():
-                    if dist.is_initialized():
-                        gpu_rank = dist.get_rank()
-                    else:
-                        gpu_rank = torch.cuda.current_device()
-
                 name = func_name or func.__qualname__
-                self.start(name, gpu_rank)
-                
+                self.start(name)
                 try:
                     result = func(*args, **kwargs)
                     return result
                 finally:
-                    self.end(name, gpu_rank)
-            
+                    self.end(name)
             return wrapper
         return decorator
 
@@ -173,7 +194,6 @@ def get_timer() -> Timing:
 
 if __name__ == "__main__":
     import torch.nn as nn
-    import time
 
     # Test Case 1: Basic module with timed forward pass
     class SimpleTransformer(nn.Module):
@@ -237,13 +257,16 @@ if __name__ == "__main__":
         
         # Test 3: Manual block timing
         print("\nTest 3: Manual block timing")
-        global_timer.start("manual_block", 0)
+        global_timer.start("manual_block")
         time.sleep(0.2)  # Simulate some work
-        global_timer.end("manual_block", 0)
+        global_timer.end("manual_block")
         
-        results = global_timer.get_time()
-        print("Results after manual timing:")
-        print(results)
+        # 多次获取结果应该返回相同的缓存结果
+        results1 = global_timer.get_time()
+        results2 = global_timer.get_time()
+        print("Results after manual timing (should be identical):")
+        print(results1)
+        print(results2)
         
         # Test 4: Clean specific block
         print("\nTest 4: Clean specific block")

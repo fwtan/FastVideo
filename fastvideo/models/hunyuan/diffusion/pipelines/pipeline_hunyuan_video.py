@@ -980,6 +980,9 @@ class HunyuanVideoPipeline(DiffusionPipeline):
             else:
                 latents = latents / self.vae.config.scaling_factor
 
+            from fastvideo.utils.timing import global_timer
+            
+            global_timer.start("VAE")
             with torch.autocast(device_type="cuda",
                                 dtype=vae_dtype,
                                 enabled=vae_autocast_enabled):
@@ -990,6 +993,7 @@ class HunyuanVideoPipeline(DiffusionPipeline):
                 image = self.vae.decode(latents,
                                         return_dict=False,
                                         generator=generator)[0]
+            global_timer.end("VAE")
 
             if expand_temporal_dim or image.shape[2] == 1:
                 image = image.squeeze(2)

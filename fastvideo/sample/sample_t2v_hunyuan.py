@@ -74,6 +74,10 @@ def main(args):
         imageio.mimsave(os.path.join(args.output_path, f"{prompt[:100]}.mp4"),
                         outputs,
                         fps=args.fps)
+        
+        from fastvideo.utils.timing import global_timer
+        results = global_timer.get_time()
+        print(results)
 
 
 if __name__ == "__main__":

@@ -32,6 +32,10 @@ def attention(
     return out
 
 
+
+from fastvideo.utils.timing import global_timer
+
+@global_timer.timer("parallel_attention")
 def parallel_attention(q, k, v, img_q_len, img_kv_len, text_mask):
     # 1GPU torch.Size([1, 11264, 24, 128]) tensor([    0, 11275, 11520], device='cuda:0', dtype=torch.int32)
     # 2GPU torch.Size([1, 5632, 24, 128]) tensor([   0, 5643, 5888], device='cuda:0', dtype=torch.int32)
