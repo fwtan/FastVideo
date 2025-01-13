@@ -25,7 +25,7 @@ torchrun --nnodes=1 --nproc_per_node=$num_gpus --master_port 29503 \
     fastvideo/sample/sample_t2v_hunyuan.py \
     --height 720 \
     --width 1280 \
-    --num_frames 57 \
+    --num_frames 61 \
     --num_inference_steps 6 \
     --guidance_scale 1 \
     --embedded_cfg_scale 6 \
@@ -37,7 +37,7 @@ torchrun --nnodes=1 --nproc_per_node=$num_gpus --master_port 29503 \
     --model_path $MODEL_BASE \
     --dit-weight ${MODEL_BASE}/hunyuan-video-t2v-720p/transformers/mp_rank_00_model_states.pt \
     --vae-sp \
-    --profile-path logs/A100/57frames.txt
+    --profile-path logs/A100/61frames.txt
 
 torchrun --nnodes=1 --nproc_per_node=$num_gpus --master_port 29503 \
     fastvideo/sample/sample_t2v_hunyuan.py \
@@ -61,7 +61,7 @@ torchrun --nnodes=1 --nproc_per_node=$num_gpus --master_port 29503 \
     fastvideo/sample/sample_t2v_hunyuan.py \
     --height 720 \
     --width 1280 \
-    --num_frames 129 \
+    --num_frames 125 \
     --num_inference_steps 6 \
     --guidance_scale 1 \
     --embedded_cfg_scale 6 \
@@ -73,4 +73,4 @@ torchrun --nnodes=1 --nproc_per_node=$num_gpus --master_port 29503 \
     --model_path $MODEL_BASE \
     --dit-weight ${MODEL_BASE}/hunyuan-video-t2v-720p/transformers/mp_rank_00_model_states.pt \
     --vae-sp \
-    --profile-path logs/A100/129frames.txt
+    --profile-path logs/A100/125frames.txt
