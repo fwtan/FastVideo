@@ -715,6 +715,9 @@ class HunyuanVideoPipeline(DiffusionPipeline):
         # width = width or self.transformer.config.sample_size * self.vae_scale_factor
         # to deal with lora scaling and other possible forward hooks
 
+        from fastvideo.utils.timing import global_timer
+        
+        global_timer.start("preprocess")
         # 1. Check inputs. Raise error if not correct
         self.check_inputs(
             prompt,
@@ -869,6 +872,8 @@ class HunyuanVideoPipeline(DiffusionPipeline):
         num_warmup_steps = len(
             timesteps) - num_inference_steps * self.scheduler.order
         self._num_timesteps = len(timesteps)
+        
+        global_timer.end("preprocess")
 
         # if is_progress_bar:
         with self.progress_bar(total=num_inference_steps) as progress_bar:
